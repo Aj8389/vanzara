@@ -2,6 +2,7 @@ node_modules/
 frontend/node_modules/
 dist/
 frontend/dist/
+frontend/.angular/
 .env
 .env.local
 *.log
