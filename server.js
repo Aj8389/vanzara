@@ -8,6 +8,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const { WebSocketServer } = WebSocket;
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 app.use(express.static(path.join(__dirname, "dist/derivbot-pro/browser")));
@@ -18,6 +19,26 @@ const wss = new WebSocketServer({ server });
 
 const DERIV_WS = "wss://ws.binaryws.com/websockets/v3?app_id=1089";
 const PORT = process.env.PORT || 3000;
+const CONFIG_FILE = path.join(__dirname, "config.json");
+
+// ─────────────────────────────────────────────
+// CONFIG (token persistence)
+// ─────────────────────────────────────────────
+function loadConfig() {
+  // Priority 1: environment variable (set in Render dashboard)
+  if (process.env.DERIV_TOKEN) return { token: process.env.DERIV_TOKEN };
+  // Priority 2: config.json file (local / Render persistent disk)
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    }
+  } catch (_) {}
+  return {};
+}
+
+function saveConfig(data) {
+  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2)); } catch (_) {}
+}
 
 // ─────────────────────────────────────────────
 // GLOBAL STATE
@@ -632,6 +653,8 @@ wss.on("connection", (browserWs) => {
 
     switch (cmd.type) {
       case "CONNECT":
+        // Persist token so server can auto-connect on restart
+        saveConfig({ token: cmd.token });
         // If already authorized with the same token and socket is open, just sync this client
         if (
           state.authorized &&
@@ -697,6 +720,21 @@ wss.on("connection", (browserWs) => {
 // ─────────────────────────────────────────────
 // REST API ENDPOINTS
 // ─────────────────────────────────────────────
+// Save token and connect (called from frontend or external tools)
+app.post("/api/token", (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "token required" });
+  saveConfig({ token });
+  if (!state.authorized || state.token !== token) connectDeriv(token);
+  res.json({ ok: true });
+});
+
+// Check if a token is stored server-side
+app.get("/api/token", (req, res) => {
+  const cfg = loadConfig();
+  res.json({ hasToken: !!cfg.token, loginid: state.loginid || null, authorized: state.authorized });
+});
+
 app.get("/api/status", (req, res) => {
   res.json({
     authorized: state.authorized,
@@ -761,4 +799,11 @@ server.listen(PORT, () => {
   console.log(`║  API Trades : /api/trades            ║`);
   console.log(`║  API Signal : /api/signal            ║`);
   console.log("╚══════════════════════════════════════╝\n");
+
+  // Auto-connect if token is saved (env var or config.json)
+  const cfg = loadConfig();
+  if (cfg.token) {
+    console.log("[INFO] Saved token found — auto-connecting to Deriv...");
+    connectDeriv(cfg.token);
+  }
 });

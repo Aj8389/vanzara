@@ -5,5 +5,6 @@ frontend/dist/
 frontend/.angular/
 .env
 .env.local
+config.json
 *.log
 npm-debug.log*

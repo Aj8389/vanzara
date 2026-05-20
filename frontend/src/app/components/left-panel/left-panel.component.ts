@@ -57,6 +57,7 @@ export class LeftPanelComponent {
     const tok = this.apiToken().trim();
     if (!tok) return;
     this.token.save(tok);
+    this.token.syncToBackend(tok);
     this.tokenSaved.set(true);
     this.tokenMsg.set('✓ Connecting...');
     this.state.connStatus.set('connecting');
