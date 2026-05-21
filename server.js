@@ -966,4 +966,17 @@ server.listen(PORT, () => {
     console.log("[INFO] Saved token found — auto-connecting to Deriv...");
     connectDeriv(cfg.token);
   }
+
+  // Self-ping every 10 min to prevent Render free tier from sleeping
+  if (process.env.NODE_ENV === "production") {
+    const selfUrl = `http://localhost:${PORT}/api/status`;
+    setInterval(() => {
+      http.get(selfUrl, (res) => {
+        log(`Self-ping OK (${res.statusCode})`, "sys");
+      }).on("error", (e) => {
+        log(`Self-ping failed: ${e.message}`, "warn");
+      });
+    }, 10 * 60 * 1000);
+    log("Self-ping enabled — server will stay alive on Render", "sys");
+  }
 });
