@@ -43,7 +43,7 @@ html, body {
 
 app-root {
   display: grid;
-  grid-template-rows: 50px 1fr;
+  grid-template-rows: 50px 1fr auto;
   height: 100vh;
 }
 
@@ -51,7 +51,7 @@ app-root {
 .workspace {
   display: grid;
   grid-template-columns: 268px 1fr 285px;
-  height: calc(100vh - 50px);
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -365,9 +365,8 @@ canvas#mc { width: 100% !important; height: 245px !important; }
 
 /* ── BACKEND STATUS BAR ── */
 .backend-bar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 8888;
   padding: 4px 16px; font-family: var(--mono); font-size: 10px; text-align: center;
-  transition: all 0.3s;
+  transition: all 0.3s; flex-shrink: 0;
   &.ok { background: rgba(0,255,170,0.08); color: rgba(0,255,170,0.7); border-top: 1px solid rgba(0,255,170,0.15); }
   &.err { background: rgba(255,51,85,0.1); color: rgba(255,51,85,0.8); border-top: 1px solid rgba(255,51,85,0.2); }
   &.info { background: rgba(61,139,255,0.07); color: rgba(61,139,255,0.7); border-top: 1px solid rgba(61,139,255,0.15); }
