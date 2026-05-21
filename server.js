@@ -99,17 +99,45 @@ function loadConfig() {
 
 function saveConfig(data) {
   try {
-    const envValues = fs.existsSync(ENV_FILE)
-      ? parseEnv(fs.readFileSync(ENV_FILE, "utf8"))
-      : {};
-
+    // Save token to .env
     if (data.token) {
+      const envValues = fs.existsSync(ENV_FILE)
+        ? parseEnv(fs.readFileSync(ENV_FILE, "utf8"))
+        : {};
       envValues.DERIV_TOKEN = data.token;
       process.env.DERIV_TOKEN = data.token;
+      fs.writeFileSync(ENV_FILE, formatEnv(envValues));
     }
 
-    fs.writeFileSync(ENV_FILE, formatEnv(envValues));
+    // Save bot settings to config.json
+    const existing = (() => {
+      try { return fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) : {}; }
+      catch (_) { return {}; }
+    })();
+    const merged = { ...existing, ...data };
+    delete merged.token; // keep token only in .env
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
   } catch (_) {}
+}
+
+function saveSettings() {
+  saveConfig({
+    symbol: state.symbol,
+    strategy: state.strategy,
+    stake: state.baseStake,
+    stopLossPct: state.stopLossPct,
+    takeProfitPct: state.takeProfitPct,
+    maxTradesPerDay: state.maxTradesPerDay,
+    dailyLossLimit: state.dailyLossLimit,
+    martingaleEnabled: state.martingaleEnabled,
+    martingaleMultiplier: state.martingaleMultiplier,
+    martingaleMaxSteps: state.martingaleMaxSteps,
+    contractType: state.contractType,
+    duration: state.duration,
+    durationUnit: state.durationUnit,
+    pauseOn3Losses: state.pauseOn3Losses,
+    botWasRunning: state.botRunning,
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -129,7 +157,7 @@ let state = {
   botRunning: false,
 
   symbol: "R_100",
-  strategy: "RSI_EMA",
+  strategy: "SMART",
 
   stake: 10,
   baseStake: 10,
@@ -176,6 +204,7 @@ let state = {
 
   pendingProposal: null,
   tradeTimeout: null,
+  autoStartPending: false,
 };
 
 // ─────────────────────────────────────────────
@@ -263,7 +292,7 @@ function calcBollinger(prices, period = 20) {
 
 function analyzeSignal() {
   const prices = state.priceHistory;
-  if (prices.length < 30) {
+  if (prices.length < 20) {
     return { signal: "WAIT", reason: "Collecting data...", rsi: 50, ema9: 0, ema21: 0, strength: 0, macd: 0 };
   }
 
@@ -278,25 +307,64 @@ function analyzeSignal() {
   let reason = "Scanning...";
   let strength = 0;
 
-  if (state.strategy === "RSI_EMA") {
-    if (rsi < 30 && ema9 > ema21) {
+  if (state.strategy === "SMART") {
+    // Score 4 independent signals; fire when majority agree
+    const recent = prices.slice(-6);
+    const upTicks = recent.filter((p, i) => i > 0 && p > recent[i - 1]).length;
+    const downTicks = (recent.length - 1) - upTicks;
+
+    const emaBull  = ema9 > ema21;
+    const rsiBull  = rsi < 50;
+    const momBull  = upTicks >= 3;
+    const macdBull = macd >= 0;
+
+    const emaBear  = !emaBull;
+    const rsiBear  = !rsiBull;
+    const momBear  = downTicks >= 3;
+    const macdBear = macd < 0;
+
+    const bullScore = (emaBull ? 1 : 0) + (rsiBull ? 1 : 0) + (momBull ? 1 : 0) + (macdBull ? 1 : 0);
+    const bearScore = (emaBear ? 1 : 0) + (rsiBear ? 1 : 0) + (momBear ? 1 : 0) + (macdBear ? 1 : 0);
+
+    if (bullScore >= 3 && bullScore > bearScore) {
       signal = "BUY";
-      reason = `RSI oversold (${rsi}) + EMA bullish cross`;
-      strength = Math.round(70 + (30 - rsi));
-    } else if (rsi > 70 && ema9 < ema21) {
+      reason = `SMART BUY ${bullScore}/4: EMA${emaBull?"↑":"↓"} RSI${rsi} Mom${upTicks}/5 MACD${macdBull?"↑":"↓"}`;
+      strength = 50 + bullScore * 12;
+    } else if (bearScore >= 3 && bearScore > bullScore) {
       signal = "SELL";
-      reason = `RSI overbought (${rsi}) + EMA bearish cross`;
-      strength = Math.round(70 + (rsi - 70));
-    } else if (rsi < 35 && ema9 > ema21) {
+      reason = `SMART SELL ${bearScore}/4: EMA${emaBear?"↓":"↑"} RSI${rsi} Mom${downTicks}/5 MACD${macdBear?"↓":"↑"}`;
+      strength = 50 + bearScore * 12;
+    } else if (bullScore === 2 && bullScore > bearScore) {
+      signal = "BUY";
+      reason = `SMART BUY 2/4: RSI${rsi} EMA${emaBull?"Bull":"Bear"} Mom${upTicks}/5`;
+      strength = 52;
+    } else if (bearScore === 2 && bearScore > bullScore) {
+      signal = "SELL";
+      reason = `SMART SELL 2/4: RSI${rsi} EMA${emaBear?"Bear":"Bull"} Mom${downTicks}/5`;
+      strength = 52;
+    } else {
+      reason = `SMART: Signals tied (Bull:${bullScore} Bear:${bearScore} RSI:${rsi})`;
+      strength = 20;
+    }
+  } else if (state.strategy === "RSI_EMA") {
+    if (rsi < 40 && ema9 > ema21) {
       signal = "BUY";
       reason = `RSI low (${rsi}) + bullish EMA`;
-      strength = Math.round(55 + (35 - rsi));
-    } else if (rsi > 65 && ema9 < ema21) {
+      strength = Math.round(60 + (40 - rsi) * 1.5);
+    } else if (rsi > 60 && ema9 < ema21) {
       signal = "SELL";
       reason = `RSI high (${rsi}) + bearish EMA`;
-      strength = Math.round(55 + (rsi - 65));
+      strength = Math.round(60 + (rsi - 60) * 1.5);
+    } else if (rsi < 45 && ema9 > ema21) {
+      signal = "BUY";
+      reason = `RSI leaning low (${rsi}) + bullish EMA`;
+      strength = 52;
+    } else if (rsi > 55 && ema9 < ema21) {
+      signal = "SELL";
+      reason = `RSI leaning high (${rsi}) + bearish EMA`;
+      strength = 52;
     } else {
-      reason = `RSI: ${rsi} | EMA trend: ${ema9 > ema21 ? "Bull" : "Bear"}`;
+      reason = `RSI: ${rsi} | EMA: ${ema9 > ema21 ? "Bull" : "Bear"}`;
       strength = 20;
     }
   } else if (state.strategy === "BOLLINGER" && boll) {
@@ -308,39 +376,52 @@ function analyzeSignal() {
       signal = "SELL";
       reason = `Price above upper band (${boll.upper.toFixed(2)})`;
       strength = Math.round(65 + Math.min(30, ((price - boll.upper) / boll.upper) * 1000));
+    } else if (price <= boll.middle) {
+      signal = "BUY";
+      reason = `Price below mid-band — bounce expected`;
+      strength = 53;
     } else {
-      reason = `Price in bands [${boll.lower.toFixed(2)}–${boll.upper.toFixed(2)}]`;
-      strength = 25;
+      signal = "SELL";
+      reason = `Price above mid-band — pullback expected`;
+      strength = 53;
     }
   } else if (state.strategy === "MACD") {
     const prevMacd = calcMACD(prices.slice(0, -1));
     if (macd > 0 && prevMacd <= 0) {
       signal = "BUY";
       reason = `MACD bullish crossover (${macd.toFixed(4)})`;
-      strength = Math.round(60 + Math.min(35, Math.abs(macd) * 5000));
+      strength = Math.round(70 + Math.min(25, Math.abs(macd) * 5000));
     } else if (macd < 0 && prevMacd >= 0) {
       signal = "SELL";
       reason = `MACD bearish crossover (${macd.toFixed(4)})`;
-      strength = Math.round(60 + Math.min(35, Math.abs(macd) * 5000));
+      strength = Math.round(70 + Math.min(25, Math.abs(macd) * 5000));
+    } else if (macd > 0) {
+      signal = "BUY";
+      reason = `MACD bullish trend (${macd.toFixed(4)})`;
+      strength = 52;
+    } else if (macd < 0) {
+      signal = "SELL";
+      reason = `MACD bearish trend (${macd.toFixed(4)})`;
+      strength = 52;
     } else {
-      reason = `MACD: ${macd.toFixed(4)} | Trend: ${macd > 0 ? "Bullish" : "Bearish"}`;
+      reason = `MACD flat`;
       strength = 20;
     }
   } else if (state.strategy === "SCALPER") {
     if (prices.length >= 5) {
       const recent = prices.slice(-5);
       const up = recent.filter((p, i) => i > 0 && p > recent[i - 1]).length;
-      if (up >= 4) {
+      if (up >= 3) {
         signal = "SELL";
-        reason = `Scalper: 4+ up ticks → reversal`;
-        strength = 60;
+        reason = `Scalper: ${up}/4 up ticks → reversal`;
+        strength = 50 + up * 10;
       } else if (up <= 1) {
         signal = "BUY";
-        reason = `Scalper: 4+ down ticks → reversal`;
-        strength = 60;
+        reason = `Scalper: ${4 - up}/4 down ticks → reversal`;
+        strength = 50 + (4 - up) * 10;
       } else {
-        reason = `Scalper: mixed ticks (${up}/5 up)`;
-        strength = 15;
+        reason = `Scalper: mixed ticks (${up}/4 up)`;
+        strength = 20;
       }
     }
   }
@@ -460,6 +541,15 @@ function handleDerivMessage(data) {
     // Subscribe to balance & ticks
     sendDeriv({ balance: 1, subscribe: 1, req_id: nextId() });
     subscribeTicks(state.symbol);
+
+    // Auto-start bot if it was running before the server restarted
+    if (state.autoStartPending) {
+      state.autoStartPending = false;
+      setTimeout(() => {
+        log("Auto-resuming bot from saved state", "ok");
+        startBot();
+      }, 3000); // wait 3s for tick history to load first
+    }
     return;
   }
 
@@ -745,6 +835,7 @@ function applySettings(s) {
   if (s.duration !== undefined) state.duration = parseInt(s.duration);
   if (s.durationUnit !== undefined) state.durationUnit = s.durationUnit;
   if (s.pauseOn3Losses !== undefined) state.pauseOn3Losses = s.pauseOn3Losses;
+  saveSettings();
 }
 
 // ─────────────────────────────────────────────
@@ -755,13 +846,15 @@ function startBot() {
   state.martStep = 0;
   state.stake = state.baseStake;
   state.paused = false;
+  saveSettings();
   broadcast({ type: "BOT_STATUS", running: true });
-  log("🤖 Bot started", "ok");
+  log("Bot started", "ok");
 }
 
 function stopBot() {
   state.botRunning = false;
   clearTimeout(state.pauseTimer);
+  saveSettings();
   broadcast({ type: "BOT_STATUS", running: false });
   log("Bot stopped", "warn");
 }
@@ -960,10 +1053,17 @@ server.listen(PORT, () => {
   console.log(`║  API Signal : /api/signal            ║`);
   console.log("╚══════════════════════════════════════╝\n");
 
-  // Auto-connect if token is saved (env var or .env file)
+  // Auto-connect if token is saved; restore settings and bot state
   const cfg = loadConfig();
   if (cfg.token) {
-    console.log("[INFO] Saved token found — auto-connecting to Deriv...");
+    const settingsKeys = ["symbol","strategy","stopLossPct","takeProfitPct",
+      "maxTradesPerDay","dailyLossLimit","martingaleEnabled","martingaleMultiplier",
+      "martingaleMaxSteps","contractType","duration","durationUnit","pauseOn3Losses"];
+    settingsKeys.forEach(k => { if (cfg[k] !== undefined) state[k] = cfg[k]; });
+    if (cfg.stake !== undefined) { state.stake = cfg.stake; state.baseStake = cfg.stake; }
+    if (cfg.botWasRunning === true) state.autoStartPending = true;
+
+    console.log(`[INFO] Saved token found — auto-connecting (bot: ${cfg.botWasRunning ? "will auto-start" : "stopped"})`);
     connectDeriv(cfg.token);
   }
 
