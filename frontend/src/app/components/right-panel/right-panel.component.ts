@@ -1,11 +1,11 @@
 import { Component, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, DecimalPipe } from '@angular/common';
 import { BotStateService } from '../../services/bot-state.service';
 
 @Component({
   selector: 'app-right-panel',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DecimalPipe],
   templateUrl: './right-panel.component.html',
   styleUrls: ['./right-panel.component.scss']
 })

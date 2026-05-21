@@ -19,25 +19,79 @@ const wss = new WebSocketServer({ server });
 
 const DERIV_WS = "wss://ws.binaryws.com/websockets/v3?app_id=1089";
 const PORT = process.env.PORT || 3000;
+const ENV_FILE = path.join(__dirname, ".env");
 const CONFIG_FILE = path.join(__dirname, "config.json");
 
 // ─────────────────────────────────────────────
 // CONFIG (token persistence)
 // ─────────────────────────────────────────────
+function parseEnv(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .reduce((acc, line) => {
+      const idx = line.indexOf("=");
+      if (idx === -1) return acc;
+      const key = line.slice(0, idx).trim();
+      let value = line.slice(idx + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function formatEnv(env) {
+  return Object.entries(env)
+    .map(([key, value]) => `${key}="${value}"`)
+    .join("\n") + "\n";
+}
+
+// Deriv API tokens are alphanumeric, typically 15-64 chars, no spaces
+function isValidToken(t) {
+  return typeof t === 'string' && /^[A-Za-z0-9_-]{10,64}$/.test(t);
+}
+
 function loadConfig() {
-  // Priority 1: environment variable (set in Render dashboard)
-  if (process.env.DERIV_TOKEN) return { token: process.env.DERIV_TOKEN };
-  // Priority 2: config.json file (local / Render persistent disk)
+  // Priority 1: runtime environment variable
+  if (process.env.DERIV_TOKEN && isValidToken(process.env.DERIV_TOKEN)) return { token: process.env.DERIV_TOKEN };
+
+  // Priority 2: local .env file
+  try {
+    if (fs.existsSync(ENV_FILE)) {
+      const envData = parseEnv(fs.readFileSync(ENV_FILE, "utf8"));
+      if (envData.DERIV_TOKEN && isValidToken(envData.DERIV_TOKEN)) {
+        process.env.DERIV_TOKEN = envData.DERIV_TOKEN;
+        return { token: envData.DERIV_TOKEN };
+      }
+    }
+  } catch (_) {}
+
+  // Fallback: legacy config.json
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
     }
   } catch (_) {}
+
   return {};
 }
 
 function saveConfig(data) {
-  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2)); } catch (_) {}
+  try {
+    const envValues = fs.existsSync(ENV_FILE)
+      ? parseEnv(fs.readFileSync(ENV_FILE, "utf8"))
+      : {};
+
+    if (data.token) {
+      envValues.DERIV_TOKEN = data.token;
+      process.env.DERIV_TOKEN = data.token;
+    }
+
+    fs.writeFileSync(ENV_FILE, formatEnv(envValues));
+  } catch (_) {}
 }
 
 // ─────────────────────────────────────────────
@@ -101,6 +155,9 @@ let state = {
   reqId: 1,
   lastSignalTime: 0,
   signalInterval: null,
+
+  pendingProposal: null,
+  tradeTimeout: null,
 };
 
 // ─────────────────────────────────────────────
@@ -278,6 +335,13 @@ function analyzeSignal() {
 // CONNECT TO DERIV
 // ─────────────────────────────────────────────
 function connectDeriv(token) {
+  if (!isValidToken(token)) {
+    log("Invalid or missing API token — enter your token in the UI", "err");
+    broadcast({ type: "CONN_STATUS", status: "error", label: "NO TOKEN — enter API token" });
+    broadcast({ type: "DERIV_ERROR", message: "Invalid API token. Please enter a valid Deriv API token." });
+    return;
+  }
+
   state.token = token;
 
   if (state.derivSocket) {
@@ -318,8 +382,44 @@ function connectDeriv(token) {
 // ─────────────────────────────────────────────
 function handleDerivMessage(data) {
   if (data.error) {
-    log(`Deriv Error: ${data.error.message}`, "err");
-    broadcast({ type: "LOG", level: "err", msg: data.error.message });
+    const message = data.error.message || "Unknown Deriv error.";
+    log(`Deriv Error: ${message}`, "err");
+    broadcast({ type: "LOG", level: "err", msg: message });
+
+    let connLabel = "Deriv auth failed — see log";
+    if (message.includes("Account is disabled")) {
+      connLabel = "Account disabled — verify Deriv account";
+    } else if (message.includes("Parameters sanity check failed")) {
+      connLabel = "Invalid API token — verify token format";
+    }
+
+    broadcast({ type: "CONN_STATUS", status: "error", label: connLabel });
+    broadcast({ type: "DERIV_ERROR", message });
+    state.authorized = false;
+    return;
+  }
+
+  // PROPOSAL RESPONSE — step 2: buy the quoted contract
+  if (data.msg_type === "proposal") {
+    if (!state.pendingProposal) return;
+
+    if (data.error) {
+      log(`Proposal failed: ${data.error.message}`, "err");
+      state.activeTrade = null;
+      state.pendingProposal = null;
+      return;
+    }
+
+    const proposal = data.proposal;
+    log(`Quote received — buying at $${proposal.ask_price}`, "info");
+
+    sendDeriv({
+      buy: proposal.id,
+      price: proposal.ask_price,
+      req_id: nextId(),
+    });
+
+    state.pendingProposal = null;
     return;
   }
 
@@ -384,14 +484,23 @@ function handleDerivMessage(data) {
 
   // BUY CONTRACT RESPONSE
   if (data.msg_type === "buy") {
+    if (data.error) {
+      log(`Buy failed: ${data.error.message}`, "err");
+      state.activeTrade = null;
+      state.activeContractId = null;
+      state.pendingProposal = null;
+      return;
+    }
+
     const contract = data.buy;
     state.activeContractId = contract.contract_id;
 
+    // Use the actual buy price from Deriv as entry price
     const trade = {
       openTime: Date.now(),
       direction: state.activeTrade?.direction || "BUY",
       stake: state.stake,
-      entryPrice: state.currentPrice,
+      entryPrice: parseFloat(contract.buy_price) || state.currentPrice,
       status: "open",
     };
     state.activeTrade = trade;
@@ -400,8 +509,22 @@ function handleDerivMessage(data) {
     log(`Trade opened: ${trade.direction} | Stake: $${trade.stake} | Entry: ${trade.entryPrice}`, "ok");
     broadcast({ type: "TRADE_OPENED", trade });
 
-    // Subscribe to contract updates
+    // Subscribe to live contract updates
     sendDeriv({ proposal_open_contract: 1, contract_id: state.activeContractId, subscribe: 1, req_id: nextId() });
+
+    // Fallback: if settlement message never arrives, re-query after duration + buffer
+    const durationMs = state.durationUnit === "t" ? state.duration * 2000 + 5000
+                     : state.durationUnit === "m" ? state.duration * 60000 + 15000
+                     : state.durationUnit === "h" ? state.duration * 3600000 + 30000
+                     : state.duration * 1000 + 10000;
+    clearTimeout(state.tradeTimeout);
+    state.tradeTimeout = setTimeout(() => {
+      if (state.activeTrade && state.activeContractId) {
+        log("Trade timeout — re-querying contract status", "warn");
+        sendDeriv({ proposal_open_contract: 1, contract_id: state.activeContractId, req_id: nextId() });
+      }
+    }, durationMs);
+
     return;
   }
 
@@ -410,10 +533,17 @@ function handleDerivMessage(data) {
     const poc = data.proposal_open_contract;
     if (!poc) return;
 
+    // Ignore stale updates from previous contracts
+    if (poc.contract_id !== state.activeContractId) return;
+
     broadcast({ type: "CONTRACT_UPDATE", contract: poc });
 
-    // Check if contract is settled
-    if (poc.is_expired || poc.is_sold || poc.status === "won" || poc.status === "lost") {
+    const settled = poc.is_expired === 1 || poc.is_sold === 1
+                 || poc.status === "won" || poc.status === "lost";
+
+    if (settled && state.activeTrade) {
+      clearTimeout(state.tradeTimeout);
+      state.tradeTimeout = null;
       handleContractClose(poc);
     }
     return;
@@ -431,6 +561,12 @@ function handleDerivMessage(data) {
 // ─────────────────────────────────────────────
 function handleContractClose(poc) {
   if (!state.activeTrade) return;
+
+  clearTimeout(state.tradeTimeout);
+  state.tradeTimeout = null;
+
+  // Stop receiving further updates for this contract
+  sendDeriv({ forget_all: "proposal_open_contract", req_id: nextId() });
 
   const isWin = poc.status === "won" || (poc.profit && parseFloat(poc.profit) > 0);
   const profit = poc.profit ? parseFloat(poc.profit) : (isWin ? state.stake * 0.85 : -state.stake);
@@ -537,7 +673,7 @@ function runBotLogic() {
 }
 
 // ─────────────────────────────────────────────
-// PLACE TRADE
+// PLACE TRADE — step 1: request proposal
 // ─────────────────────────────────────────────
 function placeTrade(contractType, direction) {
   if (!state.authorized) {
@@ -545,6 +681,7 @@ function placeTrade(contractType, direction) {
     return;
   }
 
+  // Mark trade pending to block duplicate signals
   state.activeTrade = {
     openTime: Date.now(),
     direction,
@@ -552,21 +689,22 @@ function placeTrade(contractType, direction) {
     entryPrice: state.currentPrice,
     status: "open",
   };
+  state.pendingProposal = { contractType, direction };
 
-  log(`Placing ${direction} | ${contractType} | Stake: $${state.stake}`, "info");
+  // Cancel any lingering subscriptions from the previous trade
+  sendDeriv({ forget_all: "proposal_open_contract", req_id: nextId() });
+
+  log(`Requesting quote: ${direction} | ${contractType} | $${state.stake}`, "info");
 
   sendDeriv({
-    buy: 1,
-    price: state.stake,
-    parameters: {
-      contract_type: contractType,
-      symbol: state.symbol,
-      duration: state.duration,
-      duration_unit: state.durationUnit,
-      basis: "stake",
-      amount: state.stake,
-      currency: state.currency,
-    },
+    proposal: 1,
+    contract_type: contractType,
+    symbol: state.symbol,
+    duration: state.duration,
+    duration_unit: state.durationUnit,
+    basis: "stake",
+    amount: state.stake,
+    currency: state.currency,
     req_id: nextId(),
   });
 }
@@ -611,16 +749,20 @@ function stopBot() {
 }
 
 function emergencyStop() {
+  const contractId = state.activeContractId; // save before clearing
   stopBot();
   state.activeTrade = null;
   state.activeContractId = null;
+  state.pendingProposal = null;
+  clearTimeout(state.tradeTimeout);
+  state.tradeTimeout = null;
 
-  if (state.activeContractId) {
-    sendDeriv({ sell: state.activeContractId, price: 0, req_id: nextId() });
+  if (contractId) {
+    sendDeriv({ sell: contractId, price: 0, req_id: nextId() });
   }
 
   broadcast({ type: "EMERGENCY_STOP" });
-  log("⚠ EMERGENCY STOP", "err");
+  log("EMERGENCY STOP", "err");
 }
 
 // ─────────────────────────────────────────────
@@ -800,7 +942,7 @@ server.listen(PORT, () => {
   console.log(`║  API Signal : /api/signal            ║`);
   console.log("╚══════════════════════════════════════╝\n");
 
-  // Auto-connect if token is saved (env var or config.json)
+  // Auto-connect if token is saved (env var or .env file)
   const cfg = loadConfig();
   if (cfg.token) {
     console.log("[INFO] Saved token found — auto-connecting to Deriv...");

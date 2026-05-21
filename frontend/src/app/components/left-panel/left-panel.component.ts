@@ -17,6 +17,7 @@ export class LeftPanelComponent {
   apiToken = signal(this.token.load());
   tokenSaved = signal(!!this.token.load());
   tokenMsg = signal(this.token.load() ? '✓ Token saved — auto-connecting...' : '');
+  tokenError = signal('');
 
   symbol = signal('R_100');
   contractType = signal('AUTO');
@@ -51,11 +52,19 @@ export class LeftPanelComponent {
     private ws: WebsocketService,
     private log: LogService,
     private token: TokenService
-  ) {}
+  ) {
+    this.ws.onAuthError = (msg: string) => {
+      const errorText = msg?.includes('Account is disabled')
+        ? 'Account disabled. Verify your Deriv API token and account status.'
+        : msg || 'Deriv authorization failed.';
+      this.tokenError.set(errorText);
+    };
+  }
 
   doConnect() {
     const tok = this.apiToken().trim();
     if (!tok) return;
+    this.tokenError.set('');
     this.token.save(tok);
     this.token.syncToBackend(tok);
     this.tokenSaved.set(true);
@@ -71,6 +80,7 @@ export class LeftPanelComponent {
     this.apiToken.set('');
     this.tokenSaved.set(false);
     this.tokenMsg.set('');
+    this.tokenError.set('');
     this.state.derivConnected.set(false);
     this.state.connStatus.set('');
     this.state.connLabel.set('DISCONNECTED');
@@ -117,7 +127,7 @@ export class LeftPanelComponent {
   emergencyStop() { this.ws.send({ type: 'EMERGENCY_STOP' }); this.log.add('Emergency stop triggered', 'err'); }
 
   private parseDuration(val: string): [number, string] {
-    const m = val.match(/^(\d+)([tm])$/);
+    const m = val.match(/^(\d+)([tmh])$/);
     return m ? [parseInt(m[1]), m[2]] : [1, 'm'];
   }
 }

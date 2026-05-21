@@ -60,6 +60,7 @@ export class BotStateService {
   // Trades
   trades = signal<Trade[]>([]);
   activeTrade = signal<Trade | null>(null);
+  activeTradePnl = signal<number>(0);
 
   // Signal analysis
   signalAnalysis = signal<SignalAnalysis | null>(null);
@@ -79,6 +80,7 @@ export class BotStateService {
 
   closeTrade(trade: Trade, stats: Stats) {
     this.activeTrade.set(null);
+    this.activeTradePnl.set(0);
     this.trades.update(t => [trade, ...t]);
     this.updateStats(stats);
   }

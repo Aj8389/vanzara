@@ -165,6 +165,8 @@ app-left-panel {
 }
 .tok-saved { font-size: 10px; color: var(--green); margin-top: 5px; font-family: var(--mono); }
 .tok-saved.hidden { display: none; }
+.tok-error { font-size: 10px; color: var(--red); margin-top: 5px; font-family: var(--mono); line-height: 1.4; }
+.tok-error.hidden { display: none; }
 .api-hint { font-size: 9px; color: var(--muted); margin-top: 7px; font-family: var(--mono); line-height: 1.5; }
 .rfield { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
 .rfield input[type=range] { flex: 1; accent-color: var(--green); cursor: pointer; }

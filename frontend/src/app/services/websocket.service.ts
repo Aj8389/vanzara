@@ -11,6 +11,7 @@ export class WebsocketService implements OnDestroy {
 
   onBackendStatus?: (text: string, type: string) => void;
   onToast?: (msg: string, type: string) => void;
+  onAuthError?: (msg: string) => void;
 
   constructor(
     private state: BotStateService,
@@ -87,9 +88,25 @@ export class WebsocketService implements OnDestroy {
       case 'SIGNAL_UPDATE':    this.state.signalAnalysis.set(msg.analysis as SignalAnalysis); break;
       case 'BOT_STATUS':       this.state.botRunning.set(msg.running); break;
       case 'TRADE_OPENED':     this.state.activeTrade.set(msg.trade); this.log.add(`Trade opened: ${msg.trade.direction} | $${msg.trade.stake}`, 'ok'); break;
-      case 'CONTRACT_UPDATE':  break;
+      case 'CONTRACT_UPDATE':
+        if (msg.contract?.profit !== undefined) {
+          this.state.activeTradePnl.set(parseFloat(msg.contract.profit));
+        }
+        break;
       case 'TRADE_CLOSED':     this.onTradeClosed(msg); break;
       case 'EMERGENCY_STOP':   this.state.activeTrade.set(null); this.state.botRunning.set(false); this.onToast?.('Emergency stop executed!', 'err'); break;
+      case 'DERIV_ERROR':      {
+        const label = msg.message?.includes('Account is disabled')
+          ? 'ACCOUNT DISABLED' : 'DERIV AUTH FAILED';
+        this.onAuthError?.(msg.message);
+        this.state.connStatus.set('error');
+        this.state.connLabel.set(label);
+        this.state.derivConnected.set(false);
+        this.state.isLive.set(false);
+        this.log.add(msg.message, 'err');
+        this.onToast?.('Deriv auth failed: ' + msg.message, 'err');
+        break;
+      }
       case 'LOG':              this.log.add(msg.msg, msg.level); break;
     }
   }
