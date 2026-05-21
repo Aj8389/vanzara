@@ -15,6 +15,7 @@
           <button class="ibtn outline" (click)="clearToken()" title="Clear token" style="padding:7px 10px;">✕</button>
         </div>
         <div class="tok-saved" [class.hidden]="!tokenSaved()">{{ tokenMsg() }}</div>
+        <div class="tok-error" [class.hidden]="!tokenError()">{{ tokenError() }}</div>
       </div>
       <div class="api-hint">
         <b>GET TOKEN:</b> app.deriv.com → API Token → Read + Trade

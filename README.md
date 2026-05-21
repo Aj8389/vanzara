@@ -65,6 +65,7 @@ Then open **http://localhost:3000**
 2. **Paste your Deriv API Token** in the left panel  
    - Get it from: https://app.deriv.com → API Token → Enable **Read** + **Trade** permissions
 3. **Click CONNECT** — the bot will authorize and start streaming live prices
+   - The backend stores your token in `./.env` so it can reconnect automatically after a restart.
 4. **Configure your settings:**
    - Choose Asset (Volatility 100, Boom/Crash, Forex)
    - Select Strategy (RSI+EMA, Bollinger, MACD, Scalper)
