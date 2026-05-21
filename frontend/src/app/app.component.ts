@@ -6,6 +6,7 @@ import { CenterComponent } from './components/center/center.component';
 import { RightPanelComponent } from './components/right-panel/right-panel.component';
 import { WebsocketService } from './services/websocket.service';
 import { LogService } from './services/log.service';
+import { environment } from '../environments/environment';
 
 @Component({
   selector: 'app-root',
@@ -57,13 +58,17 @@ export class AppComponent implements OnInit {
       this.backendType.set(type);
     };
 
-    // Auto-detect backend URL:
-    // When served via server.js (prod): same host + port
-    // When using ng serve (dev on :4200): point to localhost:3000
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = location.hostname;
-    const port = location.port === '4200' ? '3000' : (location.port || '3000');
-    const wsUrl = `${protocol}//${host}:${port}`;
+    // Production: use the explicit backend URL from environment.prod.ts
+    // Development: auto-detect from location (works for both ng serve and node server.js)
+    let wsUrl: string;
+    if (environment.wsUrl) {
+      wsUrl = environment.wsUrl;
+    } else {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = location.hostname;
+      const port = location.port === '4200' ? '3000' : (location.port || '3000');
+      wsUrl = `${protocol}//${host}:${port}`;
+    }
 
     this.log.add(`Connecting to backend: ${wsUrl}`, 'info');
     this.ws.connect(wsUrl);

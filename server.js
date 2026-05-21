@@ -11,6 +11,24 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
+
+// Allow requests from the frontend (Render static site + local dev)
+const ALLOWED_ORIGINS = [
+  "https://vanzara1.onrender.com",
+  "http://localhost:4200",
+  "http://localhost:3000",
+];
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "dist/derivbot-pro/browser")));
 app.use(express.json());
 

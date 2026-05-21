@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { environment } from '../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class TokenService {
@@ -18,7 +19,8 @@ export class TokenService {
 
   // Persist token on the server (survives page refresh / server restart via env var)
   syncToBackend(token: string): void {
-    fetch('/api/token', {
+    const base = environment.apiUrl || '';
+    fetch(`${base}/api/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })

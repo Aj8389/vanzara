@@ -1,14 +1,10 @@
 {
-  "name": "derivbot-pro-fullstack",
-  "version": "4.0.0",
-  "description": "DerivBot Pro — Fully Integrated Fullstack (Node.js Backend + Angular Frontend)",
+  "name": "vanzara",
+  "version": "1.0.0",
+  "description": "DerivBot Pro — Backend WebSocket Server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev:backend": "node server.js",
-    "dev:frontend": "cd frontend && npm start",
-    "build": "cd frontend && npm install && npm run build",
-    "install:all": "npm install && cd frontend && npm install"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.22.1",
