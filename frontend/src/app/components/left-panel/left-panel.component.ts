@@ -33,13 +33,14 @@ export class LeftPanelComponent {
   autoBuy = signal(true);
   autoExit = signal(true);
   pauseOnLoss = signal(true);
-  selectedStrategy = signal('RSI_EMA');
+  selectedStrategy = signal('SMART');
 
   strategies = [
-    { id: 'RSI_EMA',   name: 'RSI + EMA Cross',     desc: 'RSI overbought/oversold with EMA trend filter', wr: '68–72%', risk: 'Medium' },
-    { id: 'BOLLINGER', name: 'Bollinger Breakout',   desc: 'Price breakout above/below Bollinger Bands',    wr: '65–70%', risk: 'Low' },
-    { id: 'MACD',      name: 'MACD Divergence',      desc: 'MACD histogram crossover signal',               wr: '62–68%', risk: 'Medium' },
-    { id: 'SCALPER',   name: 'Tick Scalper',         desc: 'Fast tick-by-tick micro-reversal system',       wr: '55–65%', risk: 'High' },
+    { id: 'SMART',     name: 'Smart Multi-Signal',   desc: 'EMA + RSI + Momentum + MACD — fires on majority agreement', wr: '65–75%', risk: 'Low' },
+    { id: 'RSI_EMA',   name: 'RSI + EMA Cross',      desc: 'RSI overbought/oversold with EMA trend filter', wr: '68–72%', risk: 'Medium' },
+    { id: 'BOLLINGER', name: 'Bollinger Breakout',    desc: 'Price breakout above/below Bollinger Bands',    wr: '65–70%', risk: 'Low' },
+    { id: 'MACD',      name: 'MACD Divergence',       desc: 'MACD histogram crossover signal',               wr: '62–68%', risk: 'Medium' },
+    { id: 'SCALPER',   name: 'Tick Scalper',          desc: 'Fast tick-by-tick micro-reversal system',       wr: '55–65%', risk: 'High' },
   ];
 
   get slAmount() { return (this.stake() * this.stopLoss() / 100).toFixed(2); }

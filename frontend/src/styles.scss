@@ -51,7 +51,7 @@ app-root {
 .workspace {
   display: grid;
   grid-template-columns: 268px 1fr 285px;
-  min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -132,6 +132,7 @@ app-left-panel {
 }
 .lpanel-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
