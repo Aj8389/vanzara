@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BotStateService } from '../../services/bot-state.service';
@@ -60,6 +60,25 @@ export class LeftPanelComponent {
         : msg || 'Deriv authorization failed.';
       this.tokenError.set(errorText);
     };
+
+    // Sync settings from backend when available (e.g. opening on mobile)
+    effect(() => {
+      const s = this.state.syncedSettings();
+      if (!s) return;
+      if (s.symbol) this.symbol.set(s.symbol);
+      if (s.strategy) this.selectedStrategy.set(s.strategy);
+      if (s.stake) this.stake.set(s.stake);
+      if (s.stopLossPct) this.stopLoss.set(s.stopLossPct);
+      if (s.takeProfitPct) this.takeProfit.set(s.takeProfitPct);
+      if (s.maxTradesPerDay) this.maxTrades.set(s.maxTradesPerDay);
+      if (s.dailyLossLimit) this.dailyLimit.set(s.dailyLossLimit);
+      if (s.martingaleEnabled !== undefined) this.martEnabled.set(s.martingaleEnabled);
+      if (s.martingaleMultiplier) this.martMultiplier.set(s.martingaleMultiplier);
+      if (s.martingaleMaxSteps) this.martMaxSteps.set(s.martingaleMaxSteps);
+      if (s.contractType) this.contractType.set(s.contractType);
+      if (s.duration && s.durationUnit) this.duration.set(`${s.duration}${s.durationUnit}`);
+      if (s.pauseOn3Losses !== undefined) this.pauseOnLoss.set(s.pauseOn3Losses);
+    });
   }
 
   doConnect() {

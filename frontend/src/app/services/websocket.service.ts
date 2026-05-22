@@ -125,6 +125,7 @@ export class WebsocketService implements OnDestroy {
     if (s.currentPrice) this.state.currentPrice.set(s.currentPrice);
     if (s.stats) this.state.updateStats(s.stats);
     if (s.botRunning) this.state.botRunning.set(true);
+    if (s.settings) this.state.applySettings(s.settings);
   }
 
   private onAuthorized(msg: any) {

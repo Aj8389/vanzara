@@ -470,9 +470,18 @@ function connectDeriv(token) {
   });
 
   ws.on("close", () => {
-    log("Deriv WS closed", "warn");
+    log("Deriv WS closed — reconnecting in 5s...", "warn");
     state.authorized = false;
-    broadcast({ type: "CONN_STATUS", status: "error", label: "DISCONNECTED" });
+    broadcast({ type: "CONN_STATUS", status: "error", label: "RECONNECTING..." });
+
+    // Auto-reconnect using saved token
+    setTimeout(() => {
+      const savedToken = state.token || (loadConfig().token);
+      if (savedToken) {
+        log("Auto-reconnecting to Deriv...", "info");
+        connectDeriv(savedToken);
+      }
+    }, 5000);
   });
 }
 
@@ -542,13 +551,15 @@ function handleDerivMessage(data) {
     sendDeriv({ balance: 1, subscribe: 1, req_id: nextId() });
     subscribeTicks(state.symbol);
 
-    // Auto-start bot if it was running before the server restarted
-    if (state.autoStartPending) {
+    // Resume bot if it was running before the reconnect/restart
+    if (state.autoStartPending || state.botRunning) {
       state.autoStartPending = false;
+      const wasRunning = state.botRunning;
+      state.botRunning = false; // reset so startBot re-initialises cleanly
       setTimeout(() => {
-        log("Auto-resuming bot from saved state", "ok");
+        log("Auto-resuming bot after reconnect", "ok");
         startBot();
-      }, 3000); // wait 3s for tick history to load first
+      }, 3000);
     }
     return;
   }
@@ -902,6 +913,22 @@ wss.on("connection", (browserWs) => {
       stats: getStats(),
       priceHistory: state.priceHistory,
       currentPrice: state.currentPrice,
+      settings: {
+        symbol: state.symbol,
+        strategy: state.strategy,
+        stake: state.baseStake,
+        stopLossPct: state.stopLossPct,
+        takeProfitPct: state.takeProfitPct,
+        maxTradesPerDay: state.maxTradesPerDay,
+        dailyLossLimit: state.dailyLossLimit,
+        martingaleEnabled: state.martingaleEnabled,
+        martingaleMultiplier: state.martingaleMultiplier,
+        martingaleMaxSteps: state.martingaleMaxSteps,
+        contractType: state.contractType,
+        duration: state.duration,
+        durationUnit: state.durationUnit,
+        pauseOn3Losses: state.pauseOn3Losses,
+      },
     },
   }));
 
