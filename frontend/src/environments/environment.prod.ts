@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  wsUrl: 'wss://vanzara-backend.onrender.com',
-  apiUrl: 'https://vanzara-backend.onrender.com',
+  wsUrl: 'wss://omkar-l5r9.onrender.com',
+  apiUrl: 'https://omkar-l5r9.onrender.com',
 };

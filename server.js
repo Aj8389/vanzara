@@ -737,8 +737,13 @@ function handleContractClose(poc) {
     log("Max daily trades reached — stopping bot", "warn");
     stopBot();
   }
-  if (Math.abs(state.todayPnl) >= state.dailyLossLimit && state.todayPnl < 0) {
-    log("Daily loss limit hit — stopping bot", "err");
+  if (state.todayPnl < 0 && Math.abs(state.todayPnl) >= state.dailyLossLimit) {
+    log(`Daily loss limit hit (${state.todayPnl.toFixed(2)}) — stopping bot`, "err");
+    stopBot();
+  }
+  const takeProfitTarget = parseFloat((state.balance * state.takeProfitPct / 100).toFixed(2));
+  if (state.todayPnl > 0 && state.todayPnl >= takeProfitTarget) {
+    log(`Take profit reached +${state.todayPnl.toFixed(2)} (target: +${takeProfitTarget}) — stopping bot`, "ok");
     stopBot();
   }
 }
