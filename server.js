@@ -913,6 +913,22 @@ wss.on("connection", (browserWs) => {
       stats: getStats(),
       priceHistory: state.priceHistory,
       currentPrice: state.currentPrice,
+      settings: {
+        symbol: state.symbol,
+        strategy: state.strategy,
+        stake: state.baseStake,
+        stopLossPct: state.stopLossPct,
+        takeProfitPct: state.takeProfitPct,
+        maxTradesPerDay: state.maxTradesPerDay,
+        dailyLossLimit: state.dailyLossLimit,
+        martingaleEnabled: state.martingaleEnabled,
+        martingaleMultiplier: state.martingaleMultiplier,
+        martingaleMaxSteps: state.martingaleMaxSteps,
+        contractType: state.contractType,
+        duration: state.duration,
+        durationUnit: state.durationUnit,
+        pauseOn3Losses: state.pauseOn3Losses,
+      },
     },
   }));
 

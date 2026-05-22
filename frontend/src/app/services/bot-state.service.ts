@@ -76,7 +76,17 @@ export class BotStateService {
     this.logs.update(logs => [{ time, msg, level }, ...logs].slice(0, 80));
   }
 
+  // Synced settings from backend (used to restore UI on mobile/second browser)
+  syncedSettings = signal<any>(null);
+
   updateStats(s: Stats) { this.stats.set(s); }
+
+  applySettings(s: any) {
+    if (!s) return;
+    this.syncedSettings.set(s);
+    if (s.symbol) this.symbol.set(s.symbol);
+    if (s.strategy) this.selectedStrategy.set(s.strategy);
+  }
 
   closeTrade(trade: Trade, stats: Stats) {
     this.activeTrade.set(null);
